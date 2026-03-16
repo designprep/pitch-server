@@ -215,8 +215,5 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-const PORT = 3000;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`PITCH AI Server running on port ${PORT}`);
-  console.log(`- IP Address: 172.30.1.81 (Make sure to update app.js)`);
-});
+// Vercel Serverless를 위한 내보내기 (listen 삭제)
+export default app;

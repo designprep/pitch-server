@@ -4,9 +4,10 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "granite dev",
-    "build": "granite build",
-    "deploy": "ait deploy"
+    "start": "node server.js",
+    "toss-dev": "granite dev",
+    "toss-build": "granite build",
+    "toss-deploy": "ait deploy"
   },
   "dependencies": {
     "@apps-in-toss/web-framework": "^1.7.1",

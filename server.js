@@ -128,6 +128,43 @@ app.post('/api/toss-login', async (req, res) => {
 
 
 /* =========================================
+   [NEW] 디프렙 7일권 코드 검증 시스템 (50개 세팅 완료)
+   ========================================= */
+const validCodes = [
+  'DP7-A1B2C', 'DP7-X9Y8Z', 'DP7-M4N5P', 'DP7-Q2W3E', 'DP7-R6T7Y',
+  'DP7-U8I9O', 'DP7-P0A1S', 'DP7-D2F3G', 'DP7-H4J5K', 'DP7-L6Z7X',
+  'DP7-C8V9B', 'DP7-N0M1Q', 'DP7-W2E3R', 'DP7-T4Y5U', 'DP7-I6O7P',
+  'DP7-A8S9D', 'DP7-F0G1H', 'DP7-J2K3L', 'DP7-Z4X5C', 'DP7-V6B7N',
+  'DP7-M8Q9W', 'DP7-E0R1T', 'DP7-Y2U3I', 'DP7-O4P5A', 'DP7-S6D7F',
+  'DP7-G8H9J', 'DP7-K0L1Z', 'DP7-X2C3V', 'DP7-B4N5M', 'DP7-Q6W7E',
+  'DP7-R8T9Y', 'DP7-U0I1O', 'DP7-P2A3S', 'DP7-D4F5G', 'DP7-H6J7K',
+  'DP7-L8Z9X', 'DP7-C0V1B', 'DP7-N2M3Q', 'DP7-W4E5R', 'DP7-T6Y7U',
+  'DP7-I8O9P', 'DP7-A0S1D', 'DP7-F2G3H', 'DP7-J4K5L', 'DP7-Z6X7C',
+  'DP7-V8B9N', 'DP7-M0Q1W', 'DP7-E2R3T', 'DP7-Y4U5I', 'DP7-O6P7A'
+];
+
+// 한 번 사용된 코드를 저장하여 돌려쓰기(어뷰징) 방지
+let usedCodes = []; 
+
+app.post('/api/verify-code', (req, res) => {
+  const { code, userKey } = req.body;
+  
+  if (!validCodes.includes(code)) {
+    return res.json({ success: false, message: "유효하지 않은 코드입니다. 코드를 다시 확인해 주세요." });
+  }
+  
+  if (usedCodes.includes(code)) {
+    return res.json({ success: false, message: "이미 사용 완료된 코드입니다. 원장님께 새 코드를 문의해 주세요." });
+  }
+  
+  // 정상 코드 확인 완료 -> 사용 처리 후 성공 응답
+  usedCodes.push(code);
+  res.json({ success: true });
+});
+
+
+
+/* =========================================
    [기존 핵심 로직] 면접 단계별 시스템 프롬프트 생성기
    ========================================= */
 function getSystemPrompt(context, questionCount) {

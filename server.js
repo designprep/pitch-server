@@ -290,6 +290,51 @@ ${talkStyle}
 
 
 /* =========================================
+   [NEW] OpenAI Vision API (이미지 텍스트 추출/OCR)
+   ========================================= */
+app.post('/api/extract-text', async (req, res) => {
+  try {
+    const { imageBase64 } = req.body; // 프론트엔드에서data:image/jpeg;base64,... 형식으로 보냄
+
+    if (!imageBase64) {
+      return res.status(400).json({ error: true, message: "이미지 데이터가 없습니다." });
+    }
+
+    console.log("📸 [Vision] JD 이미지 분석 시작...");
+
+    // OpenAI Chat Completions API 호출 (모델은 gpt-4o 필수)
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o", // 이미지를 볼 수 있는 모델
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "이 이미지 속에 적힌 채용공고 내용을 지원자 면접에 활용할 수 있도록, 가독성 좋게 텍스트로만 추출해 주세요. 부가 설명 없이 추출된 텍스트 내용만 딱 반환하세요." },
+            {
+              type: "image_url",
+              image_url: {
+                url: imageBase64, // Base64 이미지 데이터를 직접 전달
+              },
+            },
+          ],
+        },
+      ],
+      max_tokens: 1500, // 공고 내용이 길 수 있으므로 충분히 설정
+    });
+
+    const extractedText = completion.choices[0].message.content;
+    
+    console.log("✅ [Vision] 텍스트 추출 완료 (길이:", extractedText.length, ")");
+    
+    res.json({ success: true, text: extractedText });
+
+  } catch (error) {
+    console.error("❌ OCR API 에러:", error);
+    res.status(500).json({ error: true, message: "AI가 이미지를 분석하는 중에 오류가 발생했습니다. 잠시 후 다시 시도해 주세요." });
+  }
+});
+
+/* =========================================
    [기존 핵심 로직] AI 통신 라우터 (채팅 & 리포트)
    ========================================= */
 app.post('/api/chat', async (req, res) => {

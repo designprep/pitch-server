@@ -383,19 +383,38 @@ app.post('/api/chat', async (req, res) => {
       });
     } 
     
-    // B. 리포트 생성 (REPORT)
+// B. 리포트 생성 (REPORT)
     else if (type === 'report') {
+      const { growthData } = req.body; 
+
       const userMessages = messages.filter(m => m.role === 'user');
-      const totalUserText = userMessages.map(m => m.content).join(" ");
       
-      if (totalUserText.length < 30) {
+      // 💡 [핵심 수정] 앱이 자동 전송한 '첫 인사말'은 글자 수 계산에서 제외합니다!
+      const realUserMessages = userMessages.filter(m => !m.content.includes("제출한 서류를 바탕으로 면접을 시작해주세요"));
+      const totalUserText = realUserMessages.map(m => m.content).join(" ");
+      
+      // 실제 답변이 15자 미만이면 AI 안 돌리고 즉시 F등급 (무한 로딩 원천 차단)
+      if (totalUserText.length < 15) {
         return res.json({
           grade: "F",
-          summary: "답변이 너무 부족하여 분석할 수 없습니다. 침묵은 면접에서 가장 큰 감점 요인입니다.",
-          keyword_gap: { used: [], missing: ["기본 답변", "적극성"] },
+          summary: "실제 답변 데이터가 너무 부족하여 분석할 수 없습니다. 침묵이나 지나치게 짧은 답변은 면접에서 가장 큰 감점 요인입니다.",
+          keyword_gap: { jd_needs: [], user_said: [], missing: ["성의 있는 답변", "적극성"] },
           feedback_points: [],
-          scores: { fit:0, logic:0, tech:0, confidence:0, ethics:0 }
+          scores: { fit:0, logic:0, tech:0, confidence:0, ethics:0 },
+          growth: { hasGrowth: false }
         });
+      }
+      // 💡 [NEW] 성장 추적 프롬프트 동적 생성
+      let growthPrompt = "";
+      let hasGrowth = false;
+      if (growthData && growthData.past && growthData.current) {
+        hasGrowth = true;
+        growthPrompt = `
+        3. **Growth Tracking (성장 추적):** 지원자의 [과거 답변]과 [오늘 답변]을 비교하여 얼마나 발전했는지 분석하세요.
+           - 과거 답변: "${growthData.past}"
+           - 오늘 답변: "${growthData.current}"
+           - 발전된 부분(구체성, 논리성, 수치 추가 등)을 1~2문장으로 요약하고, 오늘 답변 중 가장 좋아진 핵심 구절 양옆에 <mark> 태그를 달아주세요.
+        `;
       }
 
       const reportPrompt = `
@@ -403,8 +422,9 @@ app.post('/api/chat', async (req, res) => {
         지원자의 답변을 분석하여, 합격에 필요한 [데이터 기반 피드백]을 JSON으로 작성하세요.
         
         [분석 목표]
-        1. **Keyword Gap:** 지원 직무(${job})와 JD(${jd || "일반적인 직무 요구사항"})에서 중요한 키워드 5개를 뽑고, 지원자가 답변에서 실제 사용했는지 체크하세요.
-        2. **Red Pen (첨삭):** 지원자의 답변 중 **가장 좋았던 문장(Best)**과 **가장 안 좋았던 문장(Worst)**을 원문 그대로 인용하고, 이유를 설명하세요.
+        1. **Keyword Gap:** 지원 직무(${job})와 JD에서 중요한 키워드 5개를 뽑고, 사용 여부를 체크하세요.
+        2. **Red Pen (첨삭):** 답변 중 가장 좋았던 문장과 안 좋았던 문장을 인용하고 조언하세요.
+        ${growthPrompt}
         
         [출력 JSON 형식]
         {
@@ -412,24 +432,15 @@ app.post('/api/chat', async (req, res) => {
           "summary": "전체 총평 (200자 내외)",
           "scores": { "fit": 0~10, "logic": 0~10, "tech": 0~10, "confidence": 0~10, "ethics": 0~10 },
           
-          "keyword_gap": {
-            "jd_needs": ["데이터", "협업", "Figma", "기획", "문제해결"],
-            "user_said": ["협업", "기획"],
-            "missing": ["데이터", "Figma", "문제해결"]
-          },
+          "keyword_gap": { "jd_needs": [], "user_said": [], "missing": [] },
+          "feedback_points": [ { "type": "bad", "quote": "...", "advice": "..." } ],
           
-          "feedback_points": [
-            {
-              "type": "bad",
-              "quote": "그냥 열심히 노력해서 해결했습니다.",
-              "advice": "'그냥', '열심히'는 모호합니다. 구체적인 방법(How)을 설명해야 합니다."
-            },
-            {
-              "type": "good",
-              "quote": "전년 대비 매출을 20% 성장시켰습니다.",
-              "advice": "구체적인 수치(20%)를 제시하여 성과를 명확히 증명했습니다."
-            }
-          ]
+          "growth": {
+            "hasGrowth": ${hasGrowth},
+            "summaryText": "이전 면접보다 구체적인 수치 데이터가 추가되어 답변의 신뢰도가 크게 상승했습니다.",
+            "pastText": "과거 답변 원문 텍스트",
+            "todayText": "오늘 답변 중 <mark>강조할 부분</mark>이 포함된 텍스트"
+          }
         }
       `;
 

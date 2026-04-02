@@ -6,6 +6,39 @@ import cors from 'cors';
 import OpenAI from 'openai';
 import dotenv from 'dotenv';
 import crypto from 'crypto'; // 암호화/복호화를 위한 기본 내장 모듈
+import admin from 'firebase-admin';
+
+// 파이어베이스 초기화 (중복 초기화 방지)
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      // Vercel에서 줄바꿈 문자가 깨지는 현상을 방지하기 위한 처리
+      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    }),
+  });
+}
+const db = admin.firestore(); // 이제 'db' 변수로 데이터베이스를 마음껏 조작할 수 있습니다!
+// 💡 파이어베이스 db 선언부 아래에 추가해 주세요.
+async function getOrCreateUserTicket(userKey) {
+  const userRef = db.collection('users').doc(userKey);
+  const doc = await userRef.get();
+
+  if (!doc.exists) {
+    // 신규 유저라면 기본 티켓 2장 지급
+    await userRef.set({
+      tickets: 2,
+      lastLogin: new Date().toISOString()
+    });
+    return 2;
+  } else {
+    // 기존 유저라면 DB에 있는 티켓 수 반환
+    return doc.data().tickets;
+  }
+}
+
+
 
 dotenv.config();
 
@@ -115,11 +148,20 @@ app.post('/api/toss-login', async (req, res) => {
       // 필요한 정보가 더 있다면 콘솔 설정에 맞춰 이 부분에 추가
     };
 
-    // 4. 프론트엔드로 복호화된 깨끗한 정보 전달
+// 💡 [추가된 부분!] 파이어베이스에서 티켓 정보를 가져와서 user 객체에 합칩니다.
+    try {
+      const currentTickets = await getOrCreateUserTicket(decryptedUser.userKey);
+      decryptedUser.tickets = currentTickets; 
+    } catch (dbError) {
+      console.error("Firebase 티켓 조회 에러:", dbError);
+      decryptedUser.tickets = 0; // 에러 시 일단 0처리 (앱 뻗음 방지)
+    }
+
+    // 4. 프론트엔드로 복호화된 깨끗한 정보 + 티켓 개수 전달
     res.json({
       success: true,
       user: decryptedUser,
-      message: "로그인 및 복호화 성공"
+      message: "로그인 및 복호화, 티켓 조회 성공"
     });
 
   } catch (error) {
@@ -127,7 +169,6 @@ app.post('/api/toss-login', async (req, res) => {
     res.status(500).json({ error: true, message: "서버 내부 오류가 발생했습니다." });
   }
 });
-
 
 /* =========================================
    [NEW] 디프렙 7일권 코드 검증 시스템 (50개 세팅 완료)
@@ -145,23 +186,42 @@ const validCodes = [
   'DP7-V8B9N', 'DP7-M0Q1W', 'DP7-E2R3T', 'DP7-Y4U5I', 'DP7-O6P7A'
 ];
 
-// 한 번 사용된 코드를 저장하여 돌려쓰기(어뷰징) 방지
-let usedCodes = []; 
-
-app.post('/api/verify-code', (req, res) => {
+app.post('/api/verify-code', async (req, res) => {
   const { code, userKey } = req.body;
   
+  // 1. 유효한 형식의 코드인지 먼저 확인
   if (!validCodes.includes(code)) {
     return res.json({ success: false, message: "유효하지 않은 코드입니다. 코드를 다시 확인해 주세요." });
   }
   
-  if (usedCodes.includes(code)) {
-    return res.json({ success: false, message: "이미 사용 완료된 코드입니다. 원장님께 새 코드를 문의해 주세요." });
+  try {
+    // 2. 파이어베이스 'used_codes' 컬렉션에서 해당 코드가 있는지 조회
+    const codeRef = db.collection('used_codes').doc(code);
+    const codeDoc = await codeRef.get();
+
+    // 3. 이미 DB에 문서가 존재한다면 누군가 쓴 것임!
+    if (codeDoc.exists) {
+      return res.json({ success: false, message: "이미 사용 완료된 코드입니다. 원장님께 새 코드를 문의해 주세요." });
+    }
+
+    // 4. 통과! -> DB에 '이 코드는 이 유저가 썼음'이라고 영구 기록 박제
+    await codeRef.set({
+      usedBy: userKey,
+      usedAt: new Date().toISOString()
+    });
+
+    // 5. 💡 [핵심] 코드를 입력한 유저의 파이어베이스 DB에 티켓 10장(예시)을 더해줍니다!
+    const userRef = db.collection('users').doc(userKey);
+    await userRef.update({
+      tickets: admin.firestore.FieldValue.increment(10) // 10회권이라면 10을 입력. 필요에 따라 수정하세요!
+    });
+
+    res.json({ success: true, message: "티켓 충전이 완료되었습니다!" });
+
+  } catch (error) {
+    console.error("코드 검증 및 충전 중 서버 에러:", error);
+    res.status(500).json({ success: false, message: "서버 내부 오류가 발생했습니다." });
   }
-  
-  // 정상 코드 확인 완료 -> 사용 처리 후 성공 응답
-  usedCodes.push(code);
-  res.json({ success: true });
 });
 
 

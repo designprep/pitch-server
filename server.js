@@ -167,12 +167,7 @@ app.post('/api/verify-code', (req, res) => {
 
 
 /* =========================================
-   [개선안 v3.1] 면접 시스템 프롬프트 생성기
-   
-   피드백 반영:
-   1. 0번째 턴(인사)과 1번째 턴(첫 질문)을 자연스럽게 하나로 통합
-   2. 오프닝 패턴을 JS 레벨에서 랜덤 선택하여 할루시네이션 방지
-   3. 모듈 에러 유발 코드 제거
+   [개선안 v3.2] 면접 시스템 프롬프트 생성기 (할루시네이션 완벽 차단)
    ========================================= */
 
 function getSystemPrompt(context, questionCount) {
@@ -183,17 +178,17 @@ function getSystemPrompt(context, questionCount) {
   const hasJD = jd && jd.trim() !== "" && jd.trim() !== "정보 없음";
 
   // ─────────────────────────────────────
-  // 질문 소스 지시문 (원장님 로직 그대로 유지)
+  // 질문 소스 지시문
   // ─────────────────────────────────────
   let questionSource = "";
-  if (hasJD && hasResume) {
-    questionSource = `[질문 생성 규칙]\n- JD 요구역량과 이력서 경험을 연결지어 질문하세요.\n- 없는 경험을 지어내서 묻지 마세요.`;
-  } else if (hasJD && !hasResume) {
-    questionSource = `[질문 생성 규칙]\n- 이력서가 없으므로 JD에 근거해서만 질문하세요.\n- "이력서에~" 표현 절대 금지.`;
-  } else if (!hasJD && hasResume) {
-    questionSource = `[질문 생성 규칙]\n- JD가 없으므로 이력서 내용을 기반으로 ${job} 역량과 연결해 질문하세요.`;
+  if (hasJD && (hasResume || hasPortfolio)) {
+    questionSource = `[질문 생성 규칙]\n- <채용공고>의 요구역량과 <지원자_이력서/포트폴리오>의 경험을 연결지어 질문하세요.`;
+  } else if (hasJD && !hasResume && !hasPortfolio) {
+    questionSource = `[질문 생성 규칙]\n- 제출된 이력이나 경험이 없으므로 <채용공고>에 근거해서 직무 이해도 위주로 질문하세요.`;
+  } else if (!hasJD && (hasResume || hasPortfolio)) {
+    questionSource = `[질문 생성 규칙]\n- 채용공고가 없으므로 제출된 서류를 기반으로 ${job} 역량과 연결해 질문하세요.`;
   } else {
-    questionSource = `[질문 생성 규칙]\n- 제출된 서류가 없습니다. ${job} 직무의 일반적 역량을 열린 질문으로 물어보세요.\n- "이력서에~" 표현 절대 금지.`;
+    questionSource = `[질문 생성 규칙]\n- 제출된 서류가 없습니다. ${job} 직무의 일반적 역량을 열린 질문이나 상황 대처 질문으로 물어보세요.`;
   }
 
   // ─────────────────────────────────────
@@ -204,19 +199,16 @@ function getSystemPrompt(context, questionCount) {
   let talkStyle = "";
   let transition = "";
 
-  // ── 1단계: 인사 및 첫 탐색 (질문 1~2) ──
   if (questionCount <= 2) {
     stage = "1단계: 탐색 (Ice Breaking)";
-    
-    // 💡 [개선] JS에서 랜덤으로 오프닝 패턴 1개를 뽑아 AI에게 확정 지시
     if (questionCount === 1) {
       const openingPatterns = [
         `맥락형: "${job} 분야가 요즘 ~한 흐름인데, 이 시점에 이 직무에 관심을 갖게 된 계기가 궁금합니다."`,
         `근황형: "요즘 어떤 일을 하고 계세요? 그리고 그게 이 직무와 어떻게 연결되는지 말씀해 주세요."`,
         `직무 이해형: "본인이 생각하는 ${job}의 핵심 역할이 뭐라고 생각하세요?"`
       ];
-      if (hasResume) openingPatterns.push(`경험 호기심형: "이력서를 보니 ~한 경험이 눈에 띄는데, 간단히 소개해 주시겠어요?"`);
-      if (hasJD) openingPatterns.push(`JD 기반형: JD의 핵심 요구사항 1가지를 언급하며 "이 부분에 대해 어떤 경험이나 생각이 있으신가요?"`);
+      if (hasResume || hasPortfolio) openingPatterns.push(`경험 호기심형: "제출해주신 서류를 보니 ~한 경험이 눈에 띄는데, 간단히 소개해 주시겠어요?"`);
+      if (hasJD) openingPatterns.push(`JD 기반형: 채용공고의 핵심 요구사항 1가지를 언급하며 "이 부분에 대해 어떤 생각이나 대비가 되어 있으신가요?"`);
       
       const selectedPattern = openingPatterns[Math.floor(Math.random() * openingPatterns.length)];
       
@@ -226,29 +218,21 @@ function getSystemPrompt(context, questionCount) {
       mission = `- 지원자의 이전 답변을 바탕으로 넓게 탐색을 이어가세요. 깊게 파고들지 마세요.`;
       talkStyle = `- 편안한 톤으로 열린 질문을 하세요.`;
     }
-
-  // ── 2단계: 경험 검증 (질문 3~4) ──
   } else if (questionCount <= 4) {
     stage = "2단계: 경험 검증 (Fact Check)";
-    if (questionCount === 3) transition = `[전환] "앞선 이야기를 바탕으로, 경험을 좀 더 구체적으로 여쭤보겠습니다."`;
-    mission = `${hasResume ? "- 이력서 경험의 진위를 확인하세요 (팀 성과/본인 기여)." : "- 지원자가 방금 전 언급한 경험에 대해서만 물어보세요."}\n- 한 경험에 꼬리질문 최대 1회.`;
-    talkStyle = `${hasResume ? '- "이력서에 ~라고 적으셨는데"로 시작.' : '- "아까 ~라고 하셨는데"로 시작.'}`;
-
-  // ── 3단계: 심층 검증 (질문 5~7) ──
+    if (questionCount === 3) transition = `[전환] "앞선 이야기를 바탕으로 좀 더 구체적으로 여쭤보겠습니다."`;
+    mission = `지원자가 방금 전 언급한 내용이나 서류에 기재된 내용에 대해 구체적인 사실 관계(역할, 기여도 등)를 확인하세요.\n- 한 주제에 꼬리질문 최대 1회.`;
+    talkStyle = `- "방금 ~라고 하셨는데" 또는 "서류에 적어주신 내용 중"으로 시작.`;
   } else if (questionCount <= 7) {
     stage = "3단계: 역량 심층 검증 (Drill-Down)";
     if (questionCount === 5) transition = `[전환] "이제 몇 가지 상황에 대해 좀 더 깊이 이야기를 나눠보겠습니다."`;
     mission = `- 면접의 핵심 구간입니다. 결과→과정, 성공→위기, 방법→대안을 파고드세요.\n- 주제 당 2~3회 꼬리질문 후 새 주제로 전환.`;
     talkStyle = `- 미러링, 반론("반대였다면?"), 가정("안됐다면?") 활용.`;
-
-  // ── 4단계: 상황 대처 (질문 8~9) ──
   } else if (questionCount <= 9) {
     stage = "4단계: 상황 대처 (Situation)";
     if (questionCount === 8) transition = `[전환] "실무 이야기 잘 들었습니다. 이번에는 가상 시나리오를 하나 드릴게요."`;
     mission = `- 정답 없는 가상 시나리오(갈등, 리소스 부족 등) 제시.\n- 꼬리물기 금지.`;
     talkStyle = `- "이런 상황을 가정해볼게요—" 로 시작. 판단하지 말고 넘기세요.`;
-
-  // ── 5단계: 마무리 (질문 10) ──
   } else {
     stage = "5단계: 마무리";
     transition = `[전환] "마지막 질문입니다."`;
@@ -263,10 +247,18 @@ function getSystemPrompt(context, questionCount) {
 - 실무에서 직접 뛰는 사람 특유의 현실적인 시각을 가지고 있습니다.
 - 지원자를 떨어뜨리려는 게 아니라, 진짜 실력과 잠재력을 확인하려는 목적입니다.
 
-[지원자 정보]
-- 지원 직무: ${job}
-${hasJD ? `- JD(채용공고):\n${jd}` : "- JD: 없음"}
-${hasResume ? `- 이력서:\n${resume}` : "- 이력서: 없음"}
+[지원자 데이터]
+<채용공고>
+${hasJD ? jd : "입력된 공고 없음"}
+</채용공고>
+
+<지원자_이력서>
+${hasResume ? resume : "입력된 이력서 없음"}
+</지원자_이력서>
+
+<지원자_포트폴리오>
+${hasPortfolio ? portfolio : "입력된 포트폴리오/프로젝트 없음"}
+</지원자_포트폴리오>
 
 ${questionSource}
 
@@ -281,11 +273,12 @@ ${mission}
 [이번 단계의 화법]
 ${talkStyle}
 
-[절대 규칙]
+[🚫 절대 규칙 - 할루시네이션(착각) 엄격 금지]
 1. 한 번에 질문 하나만. 짧은 코멘트 + 질문 1개.
 2. 빈말("좋은 답변 감사합니다") 금지.
-3. 제출되지 않은 자료의 내용을 지어내서 질문하지 마세요 (할루시네이션 절대 금지).
-4. 지원자가 말한 적 없는 내용을 인용하지 마세요.
+3. [중요] <채용공고>의 내용은 회사가 원하는 자격/업무 조건일 뿐입니다. 이를 지원자가 과거에 수행한 '본인의 경험'이라고 절대 착각하여 질문하지 마십시오.
+4. [중요] <지원자_이력서>나 <지원자_포트폴리오>가 '없음'인 경우, 지원자는 경험을 제출하지 않은 것입니다. 없는 경험을 지어내어 묻지 말고, 직무에 대한 이해도나 가상의 상황 대처 능력을 위주로 검증하십시오.
+5. 지원자가 말한 적 없는 내용을 인용하지 마세요.
   `.trim();
 }
 // 💡 모듈 내보내기 삭제됨

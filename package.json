@@ -1,21 +1,22 @@
 {
   "name": "pitch",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "private": true,
   "scripts": {
     "start": "node server.js",
-    "toss-dev": "granite dev",
-    "toss-build": "granite build",
-    "toss-deploy": "ait deploy"
+    "dev": "granite dev",
+    "build": "ait build",
+    "deploy": "ait deploy"
   },
   "dependencies": {
-    "@apps-in-toss/web-framework": "^1.7.1",
+    "@apps-in-toss/web-framework": "^2.4.1",
     "axios": "^1.13.4",
     "cheerio": "^1.2.0",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^4.22.1",
+    "firebase-admin": "^13.7.0",
     "openai": "^6.17.0"
   }
 }

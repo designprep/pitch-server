@@ -106,7 +106,7 @@ app.post('/api/toss-login', async (req, res) => {
     // 1. 인가 코드로 Access Token 발급 받기
     const tokenResponse = await fetch(`${TOSS_API_URL}/api-partner/v1/apps-in-toss/user/oauth2/generate-token`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json','apiKey': process.env.TOSS_API_KEY },
       body: JSON.stringify({ authorizationCode, referrer: referrer || 'DEFAULT' })
     });
 
@@ -124,7 +124,7 @@ app.post('/api/toss-login', async (req, res) => {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`
+        'Authorization': `Bearer ${accessToken}`,'apiKey': process.env.TOSS_API_KEY
       }
     });
 

@@ -563,5 +563,35 @@ app.post('/api/tts', async (req, res) => {
   }
 });
 
+/* =========================================
+   [NEW] 토스 결제 완료 후 티켓 지급 API (추가됨!)
+   ========================================= */
+app.post('/api/grant-tickets', async (req, res) => {
+  try {
+    const { userKey, tickets, orderId } = req.body;
+
+    // 1. 필수 데이터가 프론트에서 잘 넘어왔는지 방어
+    if (!userKey || !tickets) {
+      console.error("❌ 티켓 지급 실패: 필수 데이터 누락", req.body);
+      return res.status(400).json({ success: false, message: "userKey 또는 tickets 정보가 없습니다." });
+    }
+
+    // 2. 파이어베이스 DB 'users' 컬렉션의 해당 유저 문서에 티켓 더하기
+    const userRef = db.collection('users').doc(userKey);
+    await userRef.set({
+      tickets: admin.firestore.FieldValue.increment(tickets) // 기존 티켓 수에 누적!
+    }, { merge: true });
+
+    console.log(`✅ [결제/지급 성공] ${userKey}님에게 ${tickets}장 지급 완료 (주문번호: ${orderId})`);
+
+    // 3. 토스(앱) 쪽에 "지급 완벽하게 끝났어!" 라고 JSON 응답 보내기
+    res.json({ success: true, message: "티켓 지급 완료" });
+
+  } catch (error) {
+    console.error("❌ 티켓 지급 서버 에러:", error);
+    res.status(500).json({ success: false, message: "서버 내부 오류", details: error.message });
+  }
+});
+
 // Vercel Serverless를 위한 내보내기 (listen 삭제)
 export default app;

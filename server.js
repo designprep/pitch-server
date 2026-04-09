@@ -164,9 +164,13 @@ app.post('/api/toss-login', async (req, res) => {
       message: "로그인 및 복호화, 티켓 조회 성공"
     });
 
-  } catch (error) {
+} catch (error) {
     console.error("토스 로그인 처리 중 서버 에러:", error);
-    res.status(500).json({ error: true, message: "서버 내부 오류가 발생했습니다." });
+    res.status(500).json({ 
+        error: true, 
+        message: "서버 내부 오류가 발생했습니다.",
+        details: error.message || error.toString() // 💡 추가됨: 진짜 자바스크립트 에러 내용 출력
+    });
   }
 });
 

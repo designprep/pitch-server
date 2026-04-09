@@ -8,6 +8,7 @@ import dotenv from 'dotenv';
 import crypto from 'crypto'; // 암호화/복호화를 위한 기본 내장 모듈
 import admin from 'firebase-admin';
 import axios from 'axios';
+import https from 'https';
 
 // 파이어베이스 초기화 (중복 초기화 방지)
 if (!admin.apps.length) {
@@ -92,6 +93,11 @@ function decryptTossData(encryptedText) {
   }
 }
 
+// 💡 토스 통신용 mTLS 인증서 세팅
+const tossHttpsAgent = new https.Agent({
+  cert: process.env.TOSS_MTLS_CERT ? process.env.TOSS_MTLS_CERT.replace(/\\n/g, '\n') : '',
+  key: process.env.TOSS_MTLS_KEY ? process.env.TOSS_MTLS_KEY.replace(/\\n/g, '\n') : ''
+});
 /**
  * [NEW] 토스 로그인 API 엔드포인트
  * 앱(app.js)에서 보낸 '인가 코드'를 받아 토스 서버와 통신 후 최종 유저 정보를 반환합니다.
@@ -104,10 +110,13 @@ app.post('/api/toss-login', async (req, res) => {
   }
 
 try {
-    // 1. 인가 코드로 Access Token 발급 받기 (axios 버전)
+    // 1. 인가 코드로 Access Token 발급 받기
     const tokenResponse = await axios.post(`${TOSS_API_URL}/api-partner/v1/apps-in-toss/user/oauth2/generate-token`, 
       { authorizationCode, referrer: referrer || 'DEFAULT' },
-      { headers: { 'Content-Type': 'application/json' } }
+      { 
+        headers: { 'Content-Type': 'application/json' },
+        httpsAgent: tossHttpsAgent // 💡 인증서 첨부
+      }
     );
     const tokenData = tokenResponse.data;
 
@@ -118,12 +127,13 @@ try {
 
     const accessToken = tokenData.success.accessToken;
 
-    // 2. Access Token으로 유저 정보 조회하기 (axios 버전)
+    // 2. Access Token으로 유저 정보 조회하기
     const userResponse = await axios.get(`${TOSS_API_URL}/api-partner/v1/apps-in-toss/user/oauth2/login-me`, {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${accessToken}`
-      }
+      },
+      httpsAgent: tossHttpsAgent // 💡 인증서 첨부
     });
     const userData = userResponse.data;
 

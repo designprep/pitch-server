@@ -7,6 +7,7 @@ import OpenAI from 'openai';
 import dotenv from 'dotenv';
 import crypto from 'crypto'; // 암호화/복호화를 위한 기본 내장 모듈
 import admin from 'firebase-admin';
+import axios from 'axios';
 
 // 파이어베이스 초기화 (중복 초기화 방지)
 if (!admin.apps.length) {
@@ -102,15 +103,13 @@ app.post('/api/toss-login', async (req, res) => {
     return res.status(400).json({ error: true, message: "인가 코드가 없습니다." });
   }
 
-  try {
-    // 1. 인가 코드로 Access Token 발급 받기
-    const tokenResponse = await fetch(`${TOSS_API_URL}/api-partner/v1/apps-in-toss/user/oauth2/generate-token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ authorizationCode, referrer: referrer || 'DEFAULT' })
-    });
-
-    const tokenData = await tokenResponse.json();
+try {
+    // 1. 인가 코드로 Access Token 발급 받기 (axios 버전)
+    const tokenResponse = await axios.post(`${TOSS_API_URL}/api-partner/v1/apps-in-toss/user/oauth2/generate-token`, 
+      { authorizationCode, referrer: referrer || 'DEFAULT' },
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+    const tokenData = tokenResponse.data;
 
     if (tokenData.resultType !== 'SUCCESS') {
       console.error("토큰 발급 실패:", tokenData);
@@ -119,16 +118,14 @@ app.post('/api/toss-login', async (req, res) => {
 
     const accessToken = tokenData.success.accessToken;
 
-    // 2. Access Token으로 유저 정보(암호화 상태) 조회하기
-    const userResponse = await fetch(`${TOSS_API_URL}/api-partner/v1/apps-in-toss/user/oauth2/login-me`, {
-      method: 'GET',
+    // 2. Access Token으로 유저 정보 조회하기 (axios 버전)
+    const userResponse = await axios.get(`${TOSS_API_URL}/api-partner/v1/apps-in-toss/user/oauth2/login-me`, {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${accessToken}`
       }
     });
-
-    const userData = await userResponse.json();
+    const userData = userResponse.data;
 
     if (userData.resultType !== 'SUCCESS') {
       console.error("유저 정보 조회 실패:", userData);

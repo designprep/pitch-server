@@ -106,7 +106,7 @@ app.post('/api/toss-login', async (req, res) => {
     // 1. 인가 코드로 Access Token 발급 받기
     const tokenResponse = await fetch(`${TOSS_API_URL}/api-partner/v1/apps-in-toss/user/oauth2/generate-token`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json','apiKey': process.env.TOSS_API_KEY },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ authorizationCode, referrer: referrer || 'DEFAULT' })
     });
 
@@ -124,7 +124,7 @@ app.post('/api/toss-login', async (req, res) => {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`,'apiKey': process.env.TOSS_API_KEY
+        'Authorization': `Bearer ${accessToken}`
       }
     });
 
@@ -224,58 +224,7 @@ app.post('/api/verify-code', async (req, res) => {
   }
 });
 
-/* =========================================
-   [NEW] 토스 인앱결제 티켓 지급 API (필수!)
-   ========================================= */
-app.post('/api/grant-tickets', async (req, res) => {
-  const { userKey, tickets, orderId } = req.body;
 
-  if (!userKey || !tickets || !orderId) {
-    return res.status(400).json({ success: false, message: "필수 데이터가 누락되었습니다." });
-  }
-
-  try {
-    // 1. 중복 지급 방지: 파이어베이스에서 이 결제번호(orderId)가 처리된 적 있는지 조회
-    const orderRef = db.collection('processed_orders').doc(orderId);
-    const orderDoc = await orderRef.get();
-
-    if (orderDoc.exists) {
-      // 이미 지급된 결제라면 티켓을 또 주지 않고 성공(true)만 반환하여 토스 결제창을 닫게 함
-      return res.json({ success: true, message: "이미 처리된 결제입니다." });
-    }
-
-    // 2. 유저 DB에 티켓 개수 추가 (신규 유저라서 문서가 없을 수 있으니 방어 로직 포함)
-    const userRef = db.collection('users').doc(userKey);
-    const userDoc = await userRef.get();
-    
-    if (!userDoc.exists) {
-      // 만약 DB에 유저가 없다면 새로 만들면서 티켓 부여
-      await userRef.set({
-        tickets: tickets,
-        lastLogin: new Date().toISOString()
-      });
-    } else {
-      // 기존 유저라면 기존 티켓에 누적해서 더하기
-      await userRef.update({
-        tickets: admin.firestore.FieldValue.increment(tickets)
-      });
-    }
-
-    // 3. 결제 처리 완료 기록 남기기 (다음번에 똑같은 orderId가 오면 차단하기 위해 박제)
-    await orderRef.set({
-      userKey: userKey,
-      ticketsAdded: tickets,
-      processedAt: new Date().toISOString()
-    });
-
-    // 4. 프론트엔드로 최종 성공 응답 (이게 true로 가야 토스가 최종 결제 완료 처리함)
-    res.json({ success: true, message: `${tickets}회권 지급이 완료되었습니다!` });
-
-  } catch (error) {
-    console.error("티켓 지급 중 DB 통신 에러:", error);
-    res.status(500).json({ success: false, message: "서버 오류로 티켓 지급에 실패했습니다." });
-  }
-});
 
 /* =========================================
    [개선안 v3.4] 면접 시스템 프롬프트 생성기 (최종 마스터 버전)
